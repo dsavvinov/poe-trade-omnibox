@@ -5,8 +5,10 @@
 import invariant from "ts-invariant";
 import { parsePoeStatData } from "./api_data_parser";
 import emulateKeyboard from "./emulate_keyboard";
-import { FilterSpec } from "./filter_spec";
+import {FilterSpec, NumericalFilterSpecValue, StringFilterSpecValue} from "./filter_spec";
 import waitUntil from "./wait_until";
+import {FilterTemplate} from "./template_spec";
+import {getRegisteredTemplates} from "./templates";
 
 /**
  * DOM selectors used for scraping / finding parts of the page.
@@ -132,7 +134,14 @@ export class ItemTradePage {
     );
     const statFilterSpecs = parsePoeStatData(statData);
 
-    filterSpecs.push.apply(filterSpecs, statFilterSpecs);
+    // filterSpecs.push.apply(filterSpecs, statFilterSpecs);
+
+    const registeredTemplates = getRegisteredTemplates();
+    console.log(`Registered templates: ${JSON.stringify(registeredTemplates)}`)
+    filterSpecs.push.apply(filterSpecs, registeredTemplates)
+
+    console.log(filterSpecs)
+
     return filterSpecs;
   }
 
@@ -186,11 +195,22 @@ export class ItemTradePage {
     minMaxStatFilters[indexToFocus]?.focus();
   }
 
+  async applyTemplateFilterSpec(template: FilterTemplate) {
+    for (const spec of template.filterSpecs) {
+      await this.addStatFilterSpec(spec)
+    }
+  }
+
   /**
    * Basically a WebDriver script to click and find a filter given a filter
    * spec.
    */
   async addStatFilterSpec(spec: FilterSpec) {
+    if ('filterSpecs' in spec) {
+      await this.applyTemplateFilterSpec(spec as FilterTemplate);
+      return;
+    }
+
     // Focus the add stat filter.
     const filters = document.querySelectorAll<HTMLInputElement>(
       Selectors.ADD_STAT_FILTER
@@ -299,21 +319,55 @@ export class ItemTradePage {
     const secondToLastFilter = filtersPostClick.item(
       Math.max(filtersPostClick.length - 2, 0)
     );
-    const nearestMinInput = secondToLastFilter?.querySelector<HTMLInputElement>(
+
+    const nearestMinMaxInputs = secondToLastFilter?.querySelectorAll<HTMLInputElement>(
       Selectors.INPUT_MIN_MAX
     );
+    const nearestMinInput = nearestMinMaxInputs[0]
+    const nearestMaxInput = nearestMinMaxInputs[1]
+
     const nearestMultiselectInput =
-      secondToLastFilter?.querySelector<HTMLInputElement>(
-        Selectors.MULTISELECT_INPUT
-      );
-    if (nearestMinInput) {
-      nearestMinInput.focus();
-    } else if (nearestMultiselectInput) {
-      // Some types, like temple rooms, have another multiselect input.
-      nearestMultiselectInput.focus();
+        secondToLastFilter?.querySelector<HTMLInputElement>(
+            Selectors.MULTISELECT_INPUT
+        );
+
+    // Handle templates
+    if (spec.presetValue !== undefined) {
+      if (spec.presetValue instanceof NumericalFilterSpecValue && spec.presetValue.minValue !== undefined) {
+        if (nearestMinInput === undefined) {
+          console.error(`Can't find min input for spec ${spec.readableName} with min preset value ${spec.presetValue.minValue}`)
+          return
+        }
+        nearestMinInput.focus();
+        emulateKeyboard(spec.presetValue.minValue, nearestMinInput)
+      } else if (spec.presetValue instanceof NumericalFilterSpecValue && spec.presetValue.maxValue !== undefined) {
+        if (nearestMaxInput === undefined) {
+          console.error(`Can't find max input for spec ${spec.readableName} with max preset value ${spec.presetValue.minValue}`)
+          return
+        }
+        nearestMaxInput.focus();
+        emulateKeyboard(spec.presetValue.maxValue, nearestMaxInput)
+      } else if (spec.presetValue instanceof StringFilterSpecValue) {
+        if (nearestMultiselectInput == null) {
+          console.error(`Can't find multiselect input for spec ${spec.readableName} with string preset value ${spec.presetValue.value}`)
+          return
+        }
+        nearestMultiselectInput.focus();
+        emulateKeyboard(spec.presetValue.value, nearestMultiselectInput)
+      }
     } else {
-      console.error("Missing min input and multiselect input.");
-      return;
+      // non-template spec -> just focus on first input
+      if (nearestMinInput) {
+        nearestMinInput.focus();
+      } else if (nearestMultiselectInput) {
+        // Some types, like temple rooms, have another multiselect input.
+        nearestMultiselectInput.focus();
+
+        // TODO: need now select from multiselect
+      } else {
+        console.error("Missing min input and multiselect input.");
+        return;
+      }
     }
   }
 

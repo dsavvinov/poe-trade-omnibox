@@ -14,4 +14,27 @@ export interface FilterSpec {
   // by vendors", but there's no string you can type in to trigger this, so we
   // need this information to pick the right one in a hacky way later.
   statSubcategory?: string;
+
+  presetValue?: FilterSpecValue;
+}
+
+export interface FilterSpecValue { }
+
+export class NumericalFilterSpecValue implements FilterSpecValue {
+  minValue?: string;
+  maxValue?: string;
+
+  constructor(minValue?: string, maxValue?: string) {
+    this.minValue = minValue
+    this.maxValue = maxValue
+  }
+
+}
+
+export class StringFilterSpecValue implements FilterSpecValue {
+  value: string;
+
+  constructor(value: string) {
+    this.value = value
+  }
 }
